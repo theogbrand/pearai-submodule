@@ -44,7 +44,7 @@ import { ShortcutButton } from "../ui/shortcutButton";
 
 const StyledDiv = styled.div<{ isHidden: boolean }>`
   display: ${(props) => (props.isHidden ? "none" : "flex")};
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 4px;
   align-items: flex-end;
   z-index: 10;
@@ -96,13 +96,13 @@ function InputToolbar(props: InputToolbarProps) {
   }, [location, allModels]);
 
   return (
-      <StyledDiv
-        isHidden={props.hidden}
-        onClick={props.onClick}
-        id="input-toolbar"
-      >
-				<div className="flex-grow">
-          {!perplexityMode && (
+    <StyledDiv
+      isHidden={props.hidden}
+      onClick={props.onClick}
+      id="input-toolbar"
+    >
+      {/* <div className="flex-grow"> */}
+      {/* {!perplexityMode && (
 						<div className="flex gap-3 items-center">
               <ShortcutButton
                 keys={["⎇", "⏎"]}
@@ -111,9 +111,9 @@ function InputToolbar(props: InputToolbarProps) {
                   useCodebase: false,
                   noContext: !useActiveFile,
                 })}
-              />
-              {/* TODO:  add onClick to add file*/}
-              <ShortcutButton
+              /> */}
+      {/* TODO:  add onClick to add file*/}
+      {/* <ShortcutButton
                 keys={[getMetaKeyLabel(), "⏎"]}
                 onClick={() => {
                   props.onEnter({
@@ -124,11 +124,10 @@ function InputToolbar(props: InputToolbarProps) {
                 label="Use codebase"
               />
             </div>
-          )}
-					</div>
+          )} */}
+      {/* </div> */}
 
-
-        {/* <span className="flex gap-2 items-center whitespace-nowrap">
+      {/* <span className="flex gap-2 items-center whitespace-nowrap">
           <>
             {!perplexityMode && <ModelSelect />}
             <StyledSpan
@@ -187,7 +186,7 @@ function InputToolbar(props: InputToolbarProps) {
             )}
         </span> */}
 
-          {/* {props.showNoContext ? (
+      {/* {props.showNoContext ? (
             <span
               style={{
                 color: props.usingCodebase ? vscBadgeBackground : lightGray,
@@ -222,19 +221,19 @@ function InputToolbar(props: InputToolbarProps) {
               {getMetaKeyLabel()} ⏎ Use codebase
             </StyledSpan>
           ) : null} */}
-          <Button
-            className="gap-1 h-6 bg-[#AFF349] text-[#005A4E] text-xs px-2"
-            onClick={(e) => {
-              props.onEnter?.({
-                useCodebase: false,
-                noContext: !useActiveFile
-              });
-            }}
-					>
-            <ArrowTurnDownLeftIcon width="12px" height="12px" />
-            Send
-					</Button>
-          {/* <EnterButton
+      <Button
+        className="gap-1 h-6 bg-[#AFF349] text-[#005A4E] text-xs px-2"
+        onClick={(e) => {
+          props.onEnter?.({
+            useCodebase: false,
+            noContext: !useActiveFile,
+          });
+        }}
+      >
+        <ArrowTurnDownLeftIcon width="12px" height="12px" />
+        Plan | Code
+      </Button>
+      {/* <EnterButton
             offFocus={props.usingCodebase}
             onClick={(e) => {
               props.onEnter({
@@ -245,7 +244,7 @@ function InputToolbar(props: InputToolbarProps) {
           >
             ⏎ Send
           </EnterButton> */}
-      </StyledDiv>
+    </StyledDiv>
   );
 }
 

@@ -177,13 +177,13 @@ const ContinueInputBox = memo(function ContinueInputBox({
 
   return (
     <div>
-      <GradientBorder
+      {/* <GradientBorder
         loading={active && isLastUserInput ? 1 : 0}
         isFirst={false}
         isLast={false}
         borderColor={active && isLastUserInput ? undefined : vscBackground}
         borderRadius={"12px"}
-      >
+      > */}
         <TipTapEditor
           editorState={preservedState}
           onEnter={onEnter}
@@ -196,8 +196,8 @@ const ContinueInputBox = memo(function ContinueInputBox({
           onChange={handleEditorChange}
         />
         {!isMainInput && !(active&& isLastUserInput ? 1 : 0) && <Tail/>}
-      </GradientBorder>
-      
+      {/* </GradientBorder> */}
+
       {active && isLastUserInput && (
         <LoadingContainer>
           <DotsContainer>

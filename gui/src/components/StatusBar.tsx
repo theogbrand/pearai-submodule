@@ -26,7 +26,7 @@ const StatusBar = () => {
     <div className="items-center flex justify-between">
       <div className="flex items-center gap-2">
         {/* Indexing Progress Bar */}
-        <IndexingProgressBar indexingState={indexingState} />
+        {/* <IndexingProgressBar indexingState={indexingState} /> */}
       </div>
 
       {/* Header Controls */}

@@ -79,7 +79,7 @@ function ContextToolbar(props: ContextToolbarProps) {
         >
 
 			{/* Context Button */}
-            <Button
+            {/* <Button
                 className="gap-1 text-xs bg-input text-input-foreground h-6 px-2 hover:bg-sidebar-background"
                 onClick={(e) => {
                     e.stopPropagation();
@@ -92,7 +92,7 @@ function ContextToolbar(props: ContextToolbarProps) {
 					className="stroke-2"
                 />
                 Context
-            </Button>
+            </Button> */}
 
 			{/* Add Current File Button */}
             <Button

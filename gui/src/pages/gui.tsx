@@ -342,7 +342,7 @@ function GUI() {
         <div
           className="flex-col gap-2 "
         >
-          <InventoryPreview />
+          {/* <InventoryPreview /> */}
         </div>
       </div>
 
