@@ -99,9 +99,15 @@ const StepsDiv = styled.div`
 interface AiderThread {
   id: string;
   name: string;
-  history: any[];
   active: boolean;
   sessionKey: number;
+  state: {
+    aiderHistory: any[];
+    contextItems: any[];
+    title: string;
+    workspaceDirectory: string;
+    sessionId: string;
+  };
 }
 
 // Declare the extension methods we'll need for the VS Code extension
@@ -132,9 +138,15 @@ function AiderGUI() {
     {
       id: "default",
       name: "Thread 1",
-      history: [],
       active: false,
       sessionKey: 0,
+      state: {
+        aiderHistory: [],
+        contextItems: [],
+        title: "Thread 1",
+        workspaceDirectory: "",
+        sessionId: "default",
+      },
     },
   ]);
   const [activeThreadId, setActiveThreadId] = useState<string>("default");
@@ -296,60 +308,206 @@ function AiderGUI() {
     [state.aiderHistory],
   );
 
+  // Find the active thread to display (for UI only)
+  const activeThread =
+    threads.find((t) => t.id === activeThreadId) || threads[0];
+
   // Simulated thread creation function (UI only)
   const createNewThread = useCallback(() => {
     const newId = `thread-${Date.now()}`;
     const newThreadName = `Thread ${threads.length + 1}`;
 
-    setThreads((prev) => [
-      ...prev,
+    // Get current thread state from Redux
+    const currentThreadState = {
+      aiderHistory: state.aiderHistory,
+      contextItems: state.contextItems,
+      title: threads.find((t) => t.id === activeThreadId)?.name || "Thread 1",
+      workspaceDirectory: "",
+      sessionId: activeThreadId,
+    };
+
+    // Create updated threads array with current state saved
+    const updatedThreads = threads.map((thread) =>
+      thread.id === activeThreadId
+        ? { ...thread, state: currentThreadState }
+        : thread,
+    );
+
+    // Add the new thread to the updated array
+    const newThreadsArray = [
+      ...updatedThreads,
       {
         id: newId,
         name: newThreadName,
-        history: [],
         active: false,
         sessionKey: 0,
+        state: {
+          aiderHistory: [],
+          contextItems: [],
+          title: newThreadName,
+          workspaceDirectory: "",
+          sessionId: newId,
+        },
       },
-    ]);
+    ];
+
+    // Update threads state
+    setThreads(newThreadsArray);
 
     // Switch to the new thread
     setActiveThreadId(newId);
 
-    // Future backend integration would go here
-    // ideMessenger.post("aiderCreateThread", { threadId: newId });
+    // Reset the state through Redux with a properly formatted empty session
+    dispatch(
+      newSession({
+        session: {
+          aiderHistory: [],
+          perplexityHistory: [],
+          history: [],
+          title: newThreadName,
+          workspaceDirectory: "",
+          sessionId: newId,
+        },
+        source: "aider",
+      }),
+    );
+  }, [threads, dispatch, activeThreadId, state]);
 
-    // posthog?.capture("aider_thread_created");
-
-    // For now, just reset the session when switching threads
+  // Reset session handling
+  const handleResetSession = useCallback(() => {
     saveSession();
+
+    // Create a new session key for the current thread
+    const newSessionKey = Date.now();
+
+    // Update session key for the active thread only
+    setThreads((prev) =>
+      prev.map((thread) =>
+        thread.id === activeThreadId
+          ? {
+              ...thread,
+              sessionKey: newSessionKey,
+              state: {
+                ...thread.state,
+                aiderHistory: [],
+                contextItems: [],
+              },
+            }
+          : thread,
+      ),
+    );
+
+    // Reset the Redux state
+    dispatch(
+      newSession({
+        session: {
+          aiderHistory: [],
+          perplexityHistory: [],
+          history: [],
+          title:
+            threads.find((t) => t.id === activeThreadId)?.name || "Thread 1",
+          workspaceDirectory: "",
+          sessionId: activeThreadId,
+        },
+        source: "aider",
+      }),
+    );
+
+    // Reset the UI
+    setSessionKey(newSessionKey);
+
+    // Notify IDE
     ideMessenger.post("aiderResetSession", undefined);
-    setSessionKey((prev) => prev + 1);
-  }, [threads, ideMessenger, saveSession]);
+  }, [activeThreadId, threads, dispatch, saveSession, ideMessenger]);
 
   // UI-only function to switch between threads
   const switchToThread = useCallback(
     (threadId: string) => {
+      // Save current thread state from Redux
+      const currentThreadState = {
+        aiderHistory: state.aiderHistory,
+        contextItems: state.contextItems,
+        title: threads.find((t) => t.id === activeThreadId)?.name || "Thread 1",
+        workspaceDirectory: "",
+        sessionId: activeThreadId,
+      };
+
+      // Update the threads with the current thread's state
+      const updatedThreads = threads.map((thread) =>
+        thread.id === activeThreadId
+          ? { ...thread, state: currentThreadState }
+          : thread,
+      );
+
+      // Find the thread we're switching to
+      const targetThread = updatedThreads.find((t) => t.id === threadId);
+      if (!targetThread) return;
+
+      // Update threads state with the updated collection
+      setThreads(updatedThreads);
+
+      // Set the active thread ID
       setActiveThreadId(threadId);
 
-      // Future backend integration would go here
-      // ideMessenger.post("aiderSwitchThread", { threadId });
-
-      // For now, just reset the session when switching threads
-      saveSession();
-      ideMessenger.post("aiderResetSession", undefined);
-      setSessionKey((prev) => prev + 1);
+      // Load the thread's state into Redux
+      dispatch(
+        newSession({
+          session: {
+            aiderHistory: targetThread.state.aiderHistory,
+            perplexityHistory: [],
+            history: [],
+            title: targetThread.name,
+            workspaceDirectory: targetThread.state.workspaceDirectory,
+            sessionId: threadId,
+          },
+          source: "aider",
+        }),
+      );
     },
-    [ideMessenger, saveSession],
+    [threads, activeThreadId, state, dispatch],
   );
 
   // UI-only function to rename a thread
-  const renameThread = useCallback((threadId: string, newName: string) => {
-    setThreads((prev) =>
-      prev.map((thread) =>
-        thread.id === threadId ? { ...thread, name: newName } : thread,
-      ),
-    );
-  }, []);
+  const renameThread = useCallback(
+    (threadId: string, newName: string) => {
+      setThreads((prev) =>
+        prev.map((thread) =>
+          thread.id === threadId
+            ? {
+                ...thread,
+                name: newName,
+                state: {
+                  ...thread.state,
+                  title: newName,
+                },
+              }
+            : thread,
+        ),
+      );
+
+      // If this is the active thread, update the title in Redux too
+      if (threadId === activeThreadId) {
+        // Find the thread state to use its workspaceDirectory
+        const threadToRename = threads.find((t) => t.id === threadId);
+        if (threadToRename) {
+          dispatch(
+            newSession({
+              session: {
+                aiderHistory: state.aiderHistory,
+                perplexityHistory: [],
+                history: [],
+                title: newName,
+                workspaceDirectory: threadToRename.state.workspaceDirectory,
+                sessionId: threadId,
+              },
+              source: "aider",
+            }),
+          );
+        }
+      }
+    },
+    [activeThreadId, state.aiderHistory, dispatch, threads],
+  );
 
   // UI-only function to delete a thread
   const deleteThread = useCallback(
@@ -357,28 +515,54 @@ function AiderGUI() {
       // Don't delete if it's the last thread
       if (threads.length <= 1) return;
 
-      setThreads((prev) => prev.filter((thread) => thread.id !== threadId));
+      // Save current thread state from Redux
+      const currentThreadState = {
+        aiderHistory: state.aiderHistory,
+        contextItems: state.contextItems,
+        title: threads.find((t) => t.id === activeThreadId)?.name || "Thread 1",
+        workspaceDirectory: "",
+        sessionId: activeThreadId,
+      };
+
+      // Create updated threads with current state saved
+      let updatedThreads = threads.map((thread) =>
+        thread.id === activeThreadId
+          ? { ...thread, state: currentThreadState }
+          : thread,
+      );
+
+      // Remove the thread to be deleted
+      updatedThreads = updatedThreads.filter(
+        (thread) => thread.id !== threadId,
+      );
+
+      // Update threads state
+      setThreads(updatedThreads);
 
       // If we're deleting the active thread, switch to another one
       if (activeThreadId === threadId) {
-        const newActiveThread = threads.find((t) => t.id !== threadId);
+        const newActiveThread = updatedThreads[0]; // Default to first thread
         if (newActiveThread) {
           setActiveThreadId(newActiveThread.id);
 
-          // Future backend integration would go here
-          // ideMessenger.post("aiderSwitchThread", { threadId: newActiveThread.id });
-
-          // For now, just reset the session
-          saveSession();
-          ideMessenger.post("aiderResetSession", undefined);
-          setSessionKey((prev) => prev + 1);
+          // Use the thread's state
+          dispatch(
+            newSession({
+              session: {
+                aiderHistory: newActiveThread.state.aiderHistory,
+                perplexityHistory: [],
+                history: [],
+                title: newActiveThread.name,
+                workspaceDirectory: newActiveThread.state.workspaceDirectory,
+                sessionId: newActiveThread.id,
+              },
+              source: "aider",
+            }),
+          );
         }
       }
-
-      // Future backend integration would go here
-      // ideMessenger.post("aiderDeleteThread", { threadId });
     },
-    [threads, activeThreadId, ideMessenger, saveSession],
+    [threads, activeThreadId, dispatch, state],
   );
 
   // Standard input handler (no thread modifications for now)
@@ -398,9 +582,21 @@ function AiderGUI() {
         }
       }
 
-      // In a full implementation, we'd pass the thread ID through modifiers
-      // const modifiersWithThread = { ...modifiers, threadId: activeThreadId };
-      // streamResponse(editorState, modifiersWithThread, ideMessenger, null, "aider");
+      // Save current thread state before sending input
+      setThreads((prev) =>
+        prev.map((thread) =>
+          thread.id === activeThreadId
+            ? {
+                ...thread,
+                state: {
+                  ...thread.state,
+                  aiderHistory: state.aiderHistory,
+                  contextItems: state.contextItems,
+                },
+              }
+            : thread,
+        ),
+      );
 
       // For now, use standard streamResponse
       streamResponse(editorState, modifiers, ideMessenger, null, "aider");
@@ -418,13 +614,30 @@ function AiderGUI() {
       defaultModel,
       state,
       streamResponse,
-      // activeThreadId would be a dependency in full implementation
+      activeThreadId,
+      setThreads,
     ],
   );
 
-  // Find the active thread to display (for UI only)
-  const activeThread =
-    threads.find((t) => t.id === activeThreadId) || threads[0];
+  // Sync thread state when Redux state changes
+  useEffect(() => {
+    if (activeThreadId) {
+      setThreads((prev) =>
+        prev.map((thread) =>
+          thread.id === activeThreadId
+            ? {
+                ...thread,
+                state: {
+                  ...thread.state,
+                  aiderHistory: state.aiderHistory,
+                  contextItems: state.contextItems,
+                },
+              }
+            : thread,
+        ),
+      );
+    }
+  }, [state.aiderHistory, state.contextItems, activeThreadId]);
 
   if (aiderProcessState.state !== "ready") {
     let msg: string | JSX.Element = "";
@@ -588,14 +801,19 @@ function AiderGUI() {
                     className={`p-2 rounded-md cursor-pointer flex justify-between items-center ${activeThreadId === thread.id ? "bg-muted" : "hover:bg-muted"}`}
                     onClick={() => switchToThread(thread.id)}
                   >
-                    <span className="truncate">{thread.name}</span>
+                    <div className="truncate flex-1">
+                      <span className="truncate">{thread.name}</span>
+                      <div className="text-xs text-muted-foreground truncate">
+                        {thread.state.aiderHistory.length} messages
+                      </div>
+                    </div>
                     {threads.length > 1 && (
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
                           deleteThread(thread.id);
                         }}
-                        className="text-muted-foreground hover:text-destructive"
+                        className="text-muted-foreground hover:text-destructive ml-2"
                       >
                         ✕
                       </button>
@@ -659,11 +877,7 @@ function AiderGUI() {
                 {state.aiderHistory.length > 0 && (
                   <div>
                     <NewSessionButton
-                      onClick={() => {
-                        saveSession();
-                        ideMessenger.post("aiderResetSession", undefined);
-                        setSessionKey((prev) => prev + 1);
-                      }}
+                      onClick={handleResetSession}
                       className="mr-auto"
                     >
                       Clear chat (<kbd>{getMetaKeyLabel()}</kbd> <kbd>.</kbd>)
@@ -813,11 +1027,7 @@ function AiderGUI() {
           ) : state.aiderHistory.length > 0 ? (
             <div className="mt-2 flex justify-between">
               <NewSessionButton
-                onClick={() => {
-                  saveSession();
-                  ideMessenger.post("aiderResetSession", undefined);
-                  setSessionKey((prev) => prev + 1);
-                }}
+                onClick={handleResetSession}
                 className="mr-auto"
               >
                 Clear chat (<kbd>{getMetaKeyLabel()}</kbd> <kbd>.</kbd>)
