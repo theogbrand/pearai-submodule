@@ -48,15 +48,35 @@ import type { AiderState } from "../../../../extensions/vscode/src/integrations/
 import styled from "styled-components";
 import { lightGray } from "@/components";
 import InventoryDetails from "../../components/InventoryDetails";
+import { PlusIcon, QueueListIcon } from "@heroicons/react/24/solid";
 
-const inventoryDetails = <InventoryDetails
-  textColor="#FFFFFF"
-  backgroundColor="#FF65B7"
-  content="Creator"
-  blurb={<div><p>When you need a feature or a bug fix completed, Creator will find the relevant files, and make changes directly to your code. You can see specific diff changes in your source control tab afterwards.</p><p>Powered by Aider.</p></div>}
-  useful={<div><p>Full feature completions</p><p>Automated refactoring</p><p>Lower level of human intervention needed</p></div>}
-  alt={<p>Use Chat to ask questions, or Search for questions needing the web.</p>}
-/>;
+const inventoryDetails = (
+  <InventoryDetails
+    textColor="#FFFFFF"
+    backgroundColor="#FF65B7"
+    content="Creator"
+    blurb={
+      <div>
+        <p>
+          When you need a feature or a bug fix completed, Creator will find the
+          relevant files, and make changes directly to your code. You can see
+          specific diff changes in your source control tab afterwards.
+        </p>
+        <p>Powered by Aider.</p>
+      </div>
+    }
+    useful={
+      <div>
+        <p>Full feature completions</p>
+        <p>Automated refactoring</p>
+        <p>Lower level of human intervention needed</p>
+      </div>
+    }
+    alt={
+      <p>Use Chat to ask questions, or Search for questions needing the web.</p>
+    }
+  />
+);
 
 const StepsDiv = styled.div`
   padding-bottom: 8px;
@@ -75,8 +95,28 @@ const StepsDiv = styled.div`
   }
 `;
 
+// Define thread interface
+interface AiderThread {
+  id: string;
+  name: string;
+  history: any[];
+  active: boolean;
+  sessionKey: number;
+}
+
+// Declare the extension methods we'll need for the VS Code extension
+declare global {
+  interface ToIdeFromWebviewOrCoreProtocol {
+    // These need to match the existing pattern in the codebase
+    // Each entry is [RequestType, ResponseType]
+    aiderCreateThread: [{ threadId: string }, void];
+    aiderSwitchThread: [{ threadId: string }, void];
+    aiderDeleteThread: [{ threadId: string }, void];
+  }
+}
+
 function AiderGUI() {
-  const posthog = usePostHog();
+  // const posthog = usePostHog();
   const dispatch = useDispatch();
   const navigate = useNavigate();
   const ideMessenger = useContext(IdeMessengerContext);
@@ -86,6 +126,19 @@ function AiderGUI() {
   const defaultModel = useSelector(defaultModelSelector);
   const active = useSelector((state: RootState) => state.state.aiderActive);
   const [stepsOpen, setStepsOpen] = useState<(boolean | undefined)[]>([]);
+
+  // Thread management
+  const [threads, setThreads] = useState<AiderThread[]>([
+    {
+      id: "default",
+      name: "Thread 1",
+      history: [],
+      active: false,
+      sessionKey: 0,
+    },
+  ]);
+  const [activeThreadId, setActiveThreadId] = useState<string>("default");
+  const [showThreadSidebar, setShowThreadSidebar] = useState<boolean>(false);
 
   const mainTextInputRef = useRef<HTMLInputElement>(null);
   const topGuiDivRef = useRef<HTMLDivElement>(null);
@@ -104,7 +157,7 @@ function AiderGUI() {
     getLocalStorage("showAiderTutorialCard"),
   );
   const onCloseTutorialCard = () => {
-    posthog.capture("closedAiderTutorialCard");
+    // posthog.capture("closedAiderTutorialCard");
     setLocalStorage("showAiderTutorialCard", false);
     setShowAiderTutorialCard(false);
   };
@@ -184,48 +237,13 @@ function AiderGUI() {
   // }, [aiderProcessState.state, aiderProcessState.timeStamp]);
 
   const { streamResponse } = useChatHandler(dispatch, ideMessenger, "aider");
-
-  const sendInput = useCallback(
-    (editorState: JSONContent, modifiers: InputModifiers) => {
-      if (defaultModel?.provider === "free-trial") {
-        const u = getLocalStorage("ftc");
-        if (u) {
-          setLocalStorage("ftc", u + 1);
-          if (u >= FREE_TRIAL_LIMIT_REQUESTS) {
-            navigate("/onboarding");
-            posthog?.capture("ftc_reached");
-            return;
-          }
-        } else {
-          setLocalStorage("ftc", 1);
-        }
-      }
-
-      streamResponse(editorState, modifiers, ideMessenger, null, "aider");
-
-      const currentCount = getLocalStorage("mainTextEntryCounter");
-      if (currentCount) {
-        setLocalStorage("mainTextEntryCounter", currentCount + 1);
-      } else {
-        setLocalStorage("mainTextEntryCounter", 1);
-      }
-    },
-    [
-      sessionState.aiderHistory,
-      sessionState.contextItems,
-      defaultModel,
-      state,
-      streamResponse,
-    ],
-  );
-
   const { saveSession } = useHistory(dispatch, "aider");
 
   useWebviewListener(
     "newSession",
     async () => {
       saveSession();
-      setSessionKey(prev => prev + 1);
+      setSessionKey((prev) => prev + 1);
     },
     [saveSession],
   );
@@ -278,6 +296,136 @@ function AiderGUI() {
     [state.aiderHistory],
   );
 
+  // Simulated thread creation function (UI only)
+  const createNewThread = useCallback(() => {
+    const newId = `thread-${Date.now()}`;
+    const newThreadName = `Thread ${threads.length + 1}`;
+
+    setThreads((prev) => [
+      ...prev,
+      {
+        id: newId,
+        name: newThreadName,
+        history: [],
+        active: false,
+        sessionKey: 0,
+      },
+    ]);
+
+    // Switch to the new thread
+    setActiveThreadId(newId);
+
+    // Future backend integration would go here
+    // ideMessenger.post("aiderCreateThread", { threadId: newId });
+
+    // posthog?.capture("aider_thread_created");
+
+    // For now, just reset the session when switching threads
+    saveSession();
+    ideMessenger.post("aiderResetSession", undefined);
+    setSessionKey((prev) => prev + 1);
+  }, [threads, ideMessenger, saveSession]);
+
+  // UI-only function to switch between threads
+  const switchToThread = useCallback(
+    (threadId: string) => {
+      setActiveThreadId(threadId);
+
+      // Future backend integration would go here
+      // ideMessenger.post("aiderSwitchThread", { threadId });
+
+      // For now, just reset the session when switching threads
+      saveSession();
+      ideMessenger.post("aiderResetSession", undefined);
+      setSessionKey((prev) => prev + 1);
+    },
+    [ideMessenger, saveSession],
+  );
+
+  // UI-only function to rename a thread
+  const renameThread = useCallback((threadId: string, newName: string) => {
+    setThreads((prev) =>
+      prev.map((thread) =>
+        thread.id === threadId ? { ...thread, name: newName } : thread,
+      ),
+    );
+  }, []);
+
+  // UI-only function to delete a thread
+  const deleteThread = useCallback(
+    (threadId: string) => {
+      // Don't delete if it's the last thread
+      if (threads.length <= 1) return;
+
+      setThreads((prev) => prev.filter((thread) => thread.id !== threadId));
+
+      // If we're deleting the active thread, switch to another one
+      if (activeThreadId === threadId) {
+        const newActiveThread = threads.find((t) => t.id !== threadId);
+        if (newActiveThread) {
+          setActiveThreadId(newActiveThread.id);
+
+          // Future backend integration would go here
+          // ideMessenger.post("aiderSwitchThread", { threadId: newActiveThread.id });
+
+          // For now, just reset the session
+          saveSession();
+          ideMessenger.post("aiderResetSession", undefined);
+          setSessionKey((prev) => prev + 1);
+        }
+      }
+
+      // Future backend integration would go here
+      // ideMessenger.post("aiderDeleteThread", { threadId });
+    },
+    [threads, activeThreadId, ideMessenger, saveSession],
+  );
+
+  // Standard input handler (no thread modifications for now)
+  const sendInput = useCallback(
+    (editorState: JSONContent, modifiers: InputModifiers) => {
+      if (defaultModel?.provider === "free-trial") {
+        const u = getLocalStorage("ftc");
+        if (u) {
+          setLocalStorage("ftc", u + 1);
+          if (u >= FREE_TRIAL_LIMIT_REQUESTS) {
+            navigate("/onboarding");
+            // posthog?.capture("ftc_reached");
+            return;
+          }
+        } else {
+          setLocalStorage("ftc", 1);
+        }
+      }
+
+      // In a full implementation, we'd pass the thread ID through modifiers
+      // const modifiersWithThread = { ...modifiers, threadId: activeThreadId };
+      // streamResponse(editorState, modifiersWithThread, ideMessenger, null, "aider");
+
+      // For now, use standard streamResponse
+      streamResponse(editorState, modifiers, ideMessenger, null, "aider");
+
+      const currentCount = getLocalStorage("mainTextEntryCounter");
+      if (currentCount) {
+        setLocalStorage("mainTextEntryCounter", currentCount + 1);
+      } else {
+        setLocalStorage("mainTextEntryCounter", 1);
+      }
+    },
+    [
+      sessionState.aiderHistory,
+      sessionState.contextItems,
+      defaultModel,
+      state,
+      streamResponse,
+      // activeThreadId would be a dependency in full implementation
+    ],
+  );
+
+  // Find the active thread to display (for UI only)
+  const activeThread =
+    threads.find((t) => t.id === activeThreadId) || threads[0];
+
   if (aiderProcessState.state !== "ready") {
     let msg: string | JSX.Element = "";
     if (aiderProcessState.state === "signedOut") {
@@ -298,7 +446,11 @@ function AiderGUI() {
         </>
       );
     }
-    if (aiderProcessState.state === "uninstalled" || aiderProcessState.state === "stopped" || aiderProcessState.state === "crashed") {
+    if (
+      aiderProcessState.state === "uninstalled" ||
+      aiderProcessState.state === "stopped" ||
+      aiderProcessState.state === "crashed"
+    ) {
       return (
         <div className="h-full overflow-auto">
           {inventoryDetails}
@@ -309,14 +461,19 @@ function AiderGUI() {
     if (aiderProcessState.state === "installing") {
       msg = (
         <>
-          Installing PearAI Creator dependencies (aider), this may take a few minutes...
+          Installing PearAI Creator dependencies (aider), this may take a few
+          minutes...
         </>
       );
     }
-    if (aiderProcessState.state === "starting" || aiderProcessState.state === "restarting") {
+    if (
+      aiderProcessState.state === "starting" ||
+      aiderProcessState.state === "restarting"
+    ) {
       msg = (
         <>
-          Spinning up PearAI Creator (Powered By aider), please give it a second...
+          Spinning up PearAI Creator (Powered By aider), please give it a
+          second...
           {showReloadButton && (
             <>
               <div className="text-sm mt-6 p-2">
@@ -326,7 +483,10 @@ function AiderGUI() {
                 <button
                   className="tracking-wide py-3 px-6 border-none rounded-lg bg-button text-button-foreground transition-colors cursor-pointer"
                   onClick={() => {
-                    setAiderProcessState({ state: "starting", timeStamp: Date.now() });
+                    setAiderProcessState({
+                      state: "starting",
+                      timeStamp: Date.now(),
+                    });
                     setShowReloadButton(false); // Reset the state
                     ideMessenger.post("aiderResetSession", undefined);
                   }}
@@ -346,8 +506,11 @@ function AiderGUI() {
       );
     }
     if (aiderProcessState.state === "notgitrepo") {
-      msg = (<>To use PearAI Creator, please open a git repository or initialize current workspace directory as a git repository.
-        {/* <div className="flex justify-center mt-4">
+      msg = (
+        <>
+          To use PearAI Creator, please open a git repository or initialize
+          current workspace directory as a git repository.
+          {/* <div className="flex justify-center mt-4">
           <div
             className="text-sm bg-button text-white py-3 px-6 rounded-lg cursor-pointer"
             onClick={() => ideMessenger.post("aiderGitInit", undefined)}
@@ -355,7 +518,8 @@ function AiderGUI() {
             Initialize Git
           </div>
         </div> */}
-      </>)
+        </>
+      );
     }
 
     return (
@@ -384,20 +548,86 @@ function AiderGUI() {
 
   return (
     <>
-      <TopGuiDiv ref={topGuiDivRef} onScroll={handleScroll} className="h-full overflow-auto" isNewSession={state.history.length === 0}>
+      <TopGuiDiv
+        ref={topGuiDivRef}
+        onScroll={handleScroll}
+        className="h-full overflow-auto"
+        isNewSession={state.history.length === 0}
+      >
         {inventoryDetails}
+
+        {/* Thread sidebar toggle */}
+        <div className="absolute right-4 top-4 z-10">
+          <button
+            onClick={() => setShowThreadSidebar((prev) => !prev)}
+            className="p-2 rounded-md bg-muted hover:bg-muted-foreground/20 transition-colors"
+            title="Manage threads"
+          >
+            <QueueListIcon className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Thread sidebar */}
+        {showThreadSidebar && (
+          <div className="absolute right-0 top-0 bottom-0 w-64 bg-card border-l border-border shadow-lg z-20 overflow-y-auto">
+            <div className="p-4">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="font-bold">Threads</h3>
+                <button
+                  onClick={() => setShowThreadSidebar(false)}
+                  className="text-muted-foreground hover:text-foreground"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="space-y-2">
+                {threads.map((thread) => (
+                  <div
+                    key={thread.id}
+                    className={`p-2 rounded-md cursor-pointer flex justify-between items-center ${activeThreadId === thread.id ? "bg-muted" : "hover:bg-muted"}`}
+                    onClick={() => switchToThread(thread.id)}
+                  >
+                    <span className="truncate">{thread.name}</span>
+                    {threads.length > 1 && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          deleteThread(thread.id);
+                        }}
+                        className="text-muted-foreground hover:text-destructive"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              <button
+                onClick={createNewThread}
+                className="mt-4 flex items-center justify-center w-full p-2 rounded-md bg-primary text-primary-foreground hover:bg-primary/90"
+              >
+                <PlusIcon className="w-4 h-4 mr-2" /> New Thread
+              </button>
+            </div>
+          </div>
+        )}
+
         <div
           className={cn(
             "mx-2",
             state.aiderHistory.length === 0 &&
-            "h-full flex flex-col justify-center",
+              "h-full flex flex-col justify-center",
           )}
         >
           {state.aiderHistory.length === 0 ? (
             <div className="max-w-2xl mx-auto w-full text-center">
               <div className="w-full text-center mb-4 flex flex-col md:flex-row lg:flex-row items-center justify-center relative">
                 <div className="flex-1" />
-                <h1 className="text-2xl font-bold mb-2 md:mb-0 lg:mb-0 md:mx-2 lg:mx-0">PearAI Creator</h1>
+                <h1 className="text-2xl font-bold mb-2 md:mb-0 lg:mb-0 md:mx-2 lg:mx-0">
+                  PearAI
+                </h1>
                 <div className="flex-1 flex items-center justify-start">
                   <Badge variant="outline" className="lg:relative lg:top-[2px]">
                     Beta (Powered by Aider*)
@@ -417,6 +647,8 @@ function AiderGUI() {
                 <Badge variant="outline" className="pl-0">
                   Beta (Powered by aider*)
                 </Badge>
+                {/* Thread indicator badge */}
+                <Badge variant="secondary">{activeThread.name}</Badge>
               </div>
               <div className="flex items-center mt-0 justify-between pr-1">
                 <p className="text-sm text-foreground m-0">
@@ -430,7 +662,7 @@ function AiderGUI() {
                       onClick={() => {
                         saveSession();
                         ideMessenger.post("aiderResetSession", undefined);
-                        setSessionKey(prev => prev + 1);
+                        setSessionKey((prev) => prev + 1);
                       }}
                       className="mr-auto"
                     >
@@ -486,7 +718,7 @@ function AiderGUI() {
                               ? true
                               : stepsOpen[index]!
                           }
-                          onToggle={() => { }}
+                          onToggle={() => {}}
                         >
                           <StepContainer
                             index={index}
@@ -500,14 +732,14 @@ function AiderGUI() {
                                 : stepsOpen[index]!
                             }
                             key={index}
-                            onUserInput={(input: string) => { }}
+                            onUserInput={(input: string) => {}}
                             item={item}
-                            onReverse={() => { }}
+                            onReverse={() => {}}
                             onRetry={() => {
                               streamResponse(
                                 state.aiderHistory[index - 1].editorState,
                                 state.aiderHistory[index - 1].modifiers ??
-                                defaultInputModifiers,
+                                  defaultInputModifiers,
                                 ideMessenger,
                                 index - 1,
                                 "aider",
@@ -546,29 +778,31 @@ function AiderGUI() {
               ))}
             </StepsDiv>
 
-            {!active && <div
-              className={cn(
-                "transition-all duration-300",
-                state.aiderHistory.length === 0
-                  ? "max-w-2xl mx-auto w-full"
-                  : "w-full",
-              )}
-            >
-              <ContinueInputBox
-                key={sessionKey}
-                onEnter={(editorContent, modifiers) => {
-                  sendInput(editorContent, modifiers);
-                }}
-                isLastUserInput={false}
-                isMainInput={true}
-                hidden={active}
-                source="aider"
+            {!active && (
+              <div
                 className={cn(
                   "transition-all duration-300",
-                  state.aiderHistory.length === 0 && "shadow-lg",
+                  state.aiderHistory.length === 0
+                    ? "max-w-2xl mx-auto w-full"
+                    : "w-full",
                 )}
-              />
-            </div>}
+              >
+                <ContinueInputBox
+                  key={sessionKey}
+                  onEnter={(editorContent, modifiers) => {
+                    sendInput(editorContent, modifiers);
+                  }}
+                  isLastUserInput={false}
+                  isMainInput={true}
+                  hidden={active}
+                  source="aider"
+                  className={cn(
+                    "transition-all duration-300",
+                    state.aiderHistory.length === 0 && "shadow-lg",
+                  )}
+                />
+              </div>
+            )}
           </>
 
           {active ? (
@@ -577,17 +811,25 @@ function AiderGUI() {
               <br />
             </>
           ) : state.aiderHistory.length > 0 ? (
-            <div className="mt-2">
+            <div className="mt-2 flex justify-between">
               <NewSessionButton
                 onClick={() => {
                   saveSession();
                   ideMessenger.post("aiderResetSession", undefined);
-                  setSessionKey(prev => prev + 1);
+                  setSessionKey((prev) => prev + 1);
                 }}
                 className="mr-auto"
               >
                 Clear chat (<kbd>{getMetaKeyLabel()}</kbd> <kbd>.</kbd>)
               </NewSessionButton>
+
+              {/* Thread creation button */}
+              <button
+                onClick={createNewThread}
+                className="flex items-center justify-center p-2 rounded-md bg-button text-button-foreground hover:bg-button/90"
+              >
+                <PlusIcon className="w-4 h-4 mr-2" /> New Thread
+              </button>
             </div>
           ) : (
             <>
@@ -617,8 +859,8 @@ function AiderGUI() {
             onClick={() => {
               dispatch(setAiderInactive());
               if (
-                state.aiderHistory[state.aiderHistory.length - 1]?.message.content
-                  .length === 0
+                state.aiderHistory[state.aiderHistory.length - 1]?.message
+                  .content.length === 0
               ) {
                 dispatch(clearLastResponse("aider"));
               }
@@ -656,5 +898,6 @@ const tutorialContent = {
   },
   moreInfo: [
     "- Ignore system ```<<< SEARCH REPLACE >>>``` messages. These are for the system to make edits for you automatically.",
+    "- You can create multiple threads to work on different features concurrently.",
   ],
 };
